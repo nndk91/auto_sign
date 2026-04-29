@@ -215,8 +215,6 @@ if "signed_files" not in st.session_state:
     st.session_state.signed_files = {}
 if "ip_info" not in st.session_state:
     st.session_state.ip_info = None
-if "show_clear_confirm" not in st.session_state:
-    st.session_state.show_clear_confirm = False
 
 # Sidebar for configuration
 with st.sidebar:
@@ -414,7 +412,7 @@ st.session_state.sign_records = records
 
 if records:
     # Show record count and file info
-    col1, col2, col3 = st.columns([2, 2, 1])
+    col1, col2 = st.columns([1, 1])
     with col1:
         st.write(f"Total records: **{len(records)}**")
     with col2:
@@ -424,34 +422,7 @@ if records:
             st.write(f"File: `{record_file}` ({file_size} bytes)")
         else:
             st.write(f"File: `{record_file}` (not saved yet)")
-    with col3:
-        # Initialize clear confirmation state
-        if "show_clear_confirm" not in st.session_state:
-            st.session_state.show_clear_confirm = False
-        
-        # Clear Records button
-        if st.button("🗑️ Clear All Records", key="clear_records_btn"):
-            st.session_state.show_clear_confirm = True
-        
-        # Show confirmation if button clicked
-        if st.session_state.show_clear_confirm:
-            st.warning("⚠️ Are you sure? This will delete all records!")
-            col_confirm, col_cancel = st.columns(2)
-            
-            with col_confirm:
-                if st.button("✅ Yes, Clear All", key="confirm_clear_btn"):
-                    if clear_all_records():
-                        st.session_state.show_clear_confirm = False
-                        st.success("✅ All records cleared!")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error("❌ Failed to clear records")
-            
-            with col_cancel:
-                if st.button("❌ Cancel", key="cancel_clear_btn"):
-                    st.session_state.show_clear_confirm = False
-                    st.rerun()
+
     
     # Display records table
     record_data = []
