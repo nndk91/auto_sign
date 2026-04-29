@@ -93,6 +93,32 @@ DEFAULT_CONFIG = {
 st.title("📄 PDF Batch Signature App")
 st.markdown("Upload multiple PDF files to sign them automatically")
 
+# Quick Usage Guide
+with st.expander("📖 Hướng Dẫn Sử Dụng / Usage Guide", expanded=False):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+        **🇻🇳 Tiếng Việt:**
+        
+        1. **Tải lên PDF** - Chọn một hoặc nhiều file
+        2. **Xem trước** - Kiểm tra vị trí chữ ký
+        3. **Ký file** - Nhấn "Sign All PDFs"
+        4. **Tải xuống** - Lấy file đã ký
+        
+        *Điều chỉnh Offset X/Y trong sidebar để thay đổi vị trí chữ ký*
+        """)
+    with col2:
+        st.markdown("""
+        **🇬🇧 English:**
+        
+        1. **Upload PDFs** - Select one or more files
+        2. **Preview** - Check signature position
+        3. **Sign** - Click "Sign All PDFs"
+        4. **Download** - Get signed files
+        
+        *Adjust Offset X/Y in sidebar to change signature position*
+        """)
+
 
 @st.cache_data(ttl=300)
 def get_signature_from_source():
@@ -373,6 +399,30 @@ with st.sidebar:
         st.write(f"Public IP: {st.session_state.ip_info['public_ip']}")
         st.write(f"Local IP: {st.session_state.ip_info['local_ip']}")
         st.write(f"Location: {st.session_state.ip_info['city']}, {st.session_state.ip_info['region']}")
+    
+    # Usage Guide in Vietnamese
+    st.markdown("---")
+    st.subheader("📖 Hướng Dẫn Sử Dụng")
+    with st.expander("Xem hướng dẫn"):
+        st.markdown("""
+        **Các bước ký PDF:**
+        
+        1. **Tải lên file PDF** - Kéo thả hoặc chọn nhiều file PDF cùng lúc
+        2. **Lấy thông tin IP** (tùy chọn) - Nhấn "🌐 Get IP Info" để ghi lại vị trí
+        3. **Xem trước vị trí** (tùy chọn) - Chọn file và nhấn "👁️ Preview Position"
+        4. **Ký tất cả** - Nhấn "🖊️ Sign All PDFs" để xử lý
+        5. **Tải xuống** - Tải từng file hoặc tất cả dưới dạng ZIP
+        
+        **Điều chỉnh vị trí chữ ký:**
+        - **Offset X**: Dịch chuyển ngang (âm = trái, dương = phải)
+        - **Offset Y**: Dịch chuyển dọc (âm = lên, dương = xuống)
+        - **Width/Height**: Thay đổi kích thước chữ ký
+        
+        **Lưu ý:**
+        - App tự động tìm chữ "Nguyen Ngoc Dang Khoa" trong PDF
+        - Nếu không tìm thấy, sẽ dùng vị trí mặc định
+        - Chữ ký có thể từ file local (`signature.png`) hoặc Google Sheets
+        """)
 
 # Main content
 st.subheader("📤 Upload PDF Files")
@@ -476,7 +526,7 @@ if uploaded_files:
                     signed_files[output_name] = result["output_bytes"].getvalue()
                     
                     record = {
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                         "input_file": uploaded_file.name,
                         "output_file": output_name,
                         "ip_info": st.session_state.ip_info,
@@ -564,7 +614,7 @@ if records:
             record_data = []
             for r in records:
                 record_data.append({
-                    "Time": r.get("timestamp", "")[:19],
+                    "Time": r.get("timestamp", ""),
                     "Input File": r.get("input_file", "")[:30] + "..." if len(r.get("input_file", "")) > 30 else r.get("input_file", ""),
                     "IP": r.get("ip_info", {}).get("public_ip", ""),
                     "Location": f"{r.get('ip_info', {}).get('city', '')}, {r.get('ip_info', {}).get('country', '')}",

@@ -215,7 +215,7 @@ def main():
             
             # Create record
             record = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                 "input_file": result["input_file"],
                 "output_file": result["output_file"],
                 "ip_info": ip_info,

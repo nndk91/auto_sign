@@ -215,7 +215,7 @@ Records are saved as JSON in `sign_records.txt`:
 ```
 
 When using Service Account, records are also saved to the Google Sheet "data" tab with columns:
-- Input File | Output File | Public IP | Local IP | City | Region | Country | Position X | Position Y | Detection Method
+- Timestamp | Input File | Output File | Public IP | Local IP | City | Region | Country | Position X | Position Y | Detection Method
 
 ## Troubleshooting
 

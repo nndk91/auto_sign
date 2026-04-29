@@ -151,7 +151,7 @@ client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/YOUR_S
 
 **Data Sheet ("data")**
 The app will auto-create this sheet with headers:
-| Input File | Output File | Public IP | Local IP | City | Region | Country | Position X | Position Y | Detection Method |
+| Timestamp | Input File | Output File | Public IP | Local IP | City | Region | Country | Position X | Position Y | Detection Method |
 
 **Signature Sheet ("Signature")**
 1. Create a new sheet named exactly: `Signature`

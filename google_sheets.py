@@ -162,9 +162,9 @@ def save_record_to_sheets(record):
         try:
             worksheet = spreadsheet.worksheet(DATA_SHEET_NAME)
         except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=DATA_SHEET_NAME, rows=1000, cols=11)
+            worksheet = spreadsheet.add_worksheet(title=DATA_SHEET_NAME, rows=1000, cols=12)
             headers = [
-                "Input File", "Output File", "Public IP", "Local IP",
+                "Timestamp", "Input File", "Output File", "Public IP", "Local IP",
                 "City", "Region", "Country", "Position X", "Position Y", "Detection Method"
             ]
             worksheet.append_row(headers)
@@ -174,6 +174,7 @@ def save_record_to_sheets(record):
         position = record.get("position", {})
         
         row = [
+            record.get("timestamp", ""),
             record.get("input_file", ""),
             record.get("output_file", ""),
             ip_info.get("public_ip", ""),
