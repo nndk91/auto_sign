@@ -11,7 +11,74 @@ from datetime import datetime
 import base64
 import zipfile
 
+# Import Google Sheets module
+try:
+    from google_sheets import (
+        save_record_to_sheets, 
+        get_signature_from_sheets, 
+        load_records_from_sheets,
+        download_signature_image,
+        get_sheets_status,
+        DATA_SHEET_NAME,
+        SIGNATURE_SHEET_NAME
+    )
+    GOOGLE_SHEETS_AVAILABLE = True
+except ImportError as e:
+    GOOGLE_SHEETS_AVAILABLE = False
+
 st.set_page_config(page_title="PDF Batch Signature App", layout="wide")
+
+# ==================== AUTHENTICATION ====================
+def check_password():
+    """Returns True if the user had the correct password."""
+    
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["username"] == st.secrets["authentication"]["username"] and \
+           st.session_state["password"] == st.secrets["authentication"]["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.markdown("<h1 style='text-align: center;'>🔒 PDF Signature App</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Please log in to continue</p>", unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            st.text_input("Username", key="username")
+            st.text_input("Password", type="password", key="password")
+            submit = st.form_submit_button("Log In", use_container_width=True)
+            
+            if submit:
+                password_entered()
+                if not st.session_state["password_correct"]:
+                    st.error("😕 User not known or password incorrect")
+        return False
+    
+    elif not st.session_state["password_correct"]:
+        st.markdown("<h1 style='text-align: center;'>🔒 PDF Signature App</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Please log in to continue</p>", unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            st.text_input("Username", key="username")
+            st.text_input("Password", type="password", key="password")
+            submit = st.form_submit_button("Log In", use_container_width=True)
+            
+            if submit:
+                password_entered()
+                if not st.session_state["password_correct"]:
+                    st.error("😕 User not known or password incorrect")
+        return False
+    
+    else:
+        return True
+
+
+if not check_password():
+    st.stop()
+# ==================== END AUTHENTICATION ====================
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -20,11 +87,36 @@ DEFAULT_CONFIG = {
     "sig_width": 70,
     "sig_height": 70,
     "signature_path": "signature.png",
-    "record_file": "sign_records.txt"  # Save as .txt file
+    "record_file": "sign_records.txt"
 }
 
 st.title("📄 PDF Batch Signature App")
 st.markdown("Upload multiple PDF files to sign them automatically")
+
+
+@st.cache_data(ttl=300)
+def get_signature_from_source():
+    """Get signature from Google Sheets or fallback to local file."""
+    # Try Google Sheets first if available
+    if GOOGLE_SHEETS_AVAILABLE:
+        status, error = get_sheets_status()
+        if status in ["connected_service_account", "connected_public"]:
+            sig_url, error = get_signature_from_sheets()
+            if sig_url:
+                success, dl_error = download_signature_image(sig_url, DEFAULT_CONFIG["signature_path"])
+                if success:
+                    source_type = "Service Account" if status == "connected_service_account" else "Public Sheet"
+                    return DEFAULT_CONFIG["signature_path"], f"Loaded from Google Sheets ({source_type})"
+                else:
+                    return DEFAULT_CONFIG["signature_path"], f"Sheets connected but download failed: {dl_error}"
+            else:
+                return DEFAULT_CONFIG["signature_path"], f"Sheets connected but no signature URL: {error}"
+    
+    # Fallback to local file
+    if os.path.exists(DEFAULT_CONFIG["signature_path"]):
+        return DEFAULT_CONFIG["signature_path"], "Using local signature.png (Google Sheets not configured)"
+    else:
+        return None, "No signature found! Please add signature.png or configure Google Sheets."
 
 
 def get_ip_info():
@@ -84,18 +176,15 @@ def find_name_position(pdf_bytes):
 def sign_pdf(input_bytes, signature_path, position_info, config):
     """Sign a single PDF file."""
     try:
-        # Calculate signature position
         if position_info["found"]:
             sig_x = position_info["khoa_x"] + config["offset_x"]
             sig_y = position_info["khoa_y"] + config["offset_y"]
             detection_status = "auto"
         else:
-            # Default fallback position
             sig_x = 340
             sig_y = 440
             detection_status = "manual_fallback"
         
-        # Open PDF and add signature
         pdf_document = fitz.open(stream=input_bytes, filetype="pdf")
         page = pdf_document[0]
         
@@ -127,73 +216,66 @@ def sign_pdf(input_bytes, signature_path, position_info, config):
         }
 
 
+def save_record(record):
+    """Save a record to Google Sheets and local file."""
+    sheets_saved = False
+    
+    # Try to save to Google Sheets if available (service account only)
+    if GOOGLE_SHEETS_AVAILABLE:
+        status, _ = get_sheets_status()
+        if status == "connected_service_account":
+            success, error = save_record_to_sheets(record)
+            if success:
+                sheets_saved = True
+            else:
+                st.warning(f"Google Sheets save failed: {error}")
+    
+    # Always save to local file as backup
+    records = load_records_from_file()
+    records.append(record)
+    save_records_to_file(records)
+    
+    # Update session state
+    if "sign_records" not in st.session_state:
+        st.session_state.sign_records = []
+    st.session_state.sign_records.append(record)
+    
+    return sheets_saved
+
+
 def load_records_from_file():
-    """Load existing records from local file."""
+    """Load existing records from local file (backup)."""
     record_file = DEFAULT_CONFIG["record_file"]
     if os.path.exists(record_file):
         try:
             with open(record_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception as e:
-            st.warning(f"Could not load records file: {e}")
+        except:
             return []
     return []
 
 
-def save_record_to_file(record):
-    """Save a record to local file."""
-    records = load_records_from_file()
-    records.append(record)
-    
+def save_records_to_file(records):
+    """Save records to local file (backup)."""
     record_file = DEFAULT_CONFIG["record_file"]
     try:
         with open(record_file, 'w', encoding='utf-8') as f:
             json.dump(records, f, indent=2, ensure_ascii=False)
-        return True
     except Exception as e:
-        st.error(f"Failed to save record: {e}")
-        return False
+        st.error(f"Failed to save local backup: {e}")
 
 
-def load_records():
-    """Load records from session state or file."""
-    if "sign_records" not in st.session_state:
-        st.session_state.sign_records = load_records_from_file()
-    return st.session_state.sign_records
-
-
-def save_record(record):
-    """Save a record to both session state and file."""
-    # Add to session state
-    records = load_records()
-    records.append(record)
-    st.session_state.sign_records = records
-    
-    # Save to file
-    return save_record_to_file(record)
-
-
-def clear_all_records():
-    """Clear records from both session state and file."""
-    try:
-        # Clear session state first
-        if "sign_records" in st.session_state:
-            st.session_state.sign_records = []
-        
-        # Delete the file
-        record_file = DEFAULT_CONFIG["record_file"]
-        if os.path.exists(record_file):
-            os.remove(record_file)
-            st.info(f"Deleted file: {record_file}")
-        
-        # Also clear signed files from session
-        if "signed_files" in st.session_state:
-            st.session_state.signed_files = {}
-            
-        return True
-    except Exception as e:
-        st.error(f"Failed to clear records: {e}")
-        return False
+def load_all_records():
+    """Load records from Google Sheets or fallback to local file."""
+    if GOOGLE_SHEETS_AVAILABLE:
+        status, _ = get_sheets_status()
+        if status == "connected_service_account":
+            records, error = load_records_from_sheets()
+            if error:
+                st.warning(f"Google Sheets read failed: {error}")
+                return load_records_from_file()
+            return records
+    return load_records_from_file()
 
 
 def get_pdf_preview(pdf_bytes, zoom=1.5):
@@ -216,9 +298,20 @@ if "signed_files" not in st.session_state:
 if "ip_info" not in st.session_state:
     st.session_state.ip_info = None
 
-# Sidebar for configuration
+# Load signature
+sig_path, sig_status = get_signature_from_source()
+
+# Sidebar
 with st.sidebar:
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state["password_correct"] = False
+        st.rerun()
+    
+    st.markdown("---")
     st.header("⚙️ Configuration")
+    
+    # Show signature source status
+    st.caption(f"Signature: {sig_status}")
     
     st.subheader("Signature Position")
     offset_x = st.number_input("Offset X", value=DEFAULT_CONFIG["offset_x"], step=5)
@@ -227,12 +320,50 @@ with st.sidebar:
     sig_height = st.number_input("Height", value=DEFAULT_CONFIG["sig_height"], step=5)
     
     st.subheader("Signature Preview")
-    if os.path.exists(DEFAULT_CONFIG["signature_path"]):
-        st.image(DEFAULT_CONFIG["signature_path"], width=150)
+    if sig_path and os.path.exists(sig_path):
+        st.image(sig_path, width=150)
     else:
-        st.error("Signature file not found!")
+        st.error("Signature not found!")
     
-    # IP Info Display
+    # Google Sheets status
+    st.markdown("---")
+    st.subheader("📊 Google Sheets")
+    
+    if GOOGLE_SHEETS_AVAILABLE:
+        status, error = get_sheets_status()
+        if status == "connected_service_account":
+            st.success("✅ Connected (Service Account)")
+            st.caption(f"Data: {DATA_SHEET_NAME}")
+            st.caption(f"Signature: {SIGNATURE_SHEET_NAME}")
+        elif status == "connected_public":
+            st.success("✅ Connected (Public Sheet)")
+            st.caption(f"Reading from: {SIGNATURE_SHEET_NAME}")
+            st.caption("Records saved locally")
+        elif status == "public_sheet_error":
+            st.warning("⚠️ Public sheet error")
+            st.caption(f"Error: {error}")
+        else:
+            st.info("ℹ️ Not configured")
+            st.caption("Records save locally only")
+            with st.expander("How to enable Google Sheets"):
+                st.markdown(
+                    "**Option 1: Public Sheet (Read-only)**\n\n"
+                    "Edit `google_sheets.py` and set:\n\n"
+                    '```python\n'
+                    'PUBLIC_SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID"\n'
+                    '```\n\n'
+                    "Make sure the sheet is published to web.\n\n"
+                    "**Option 2: Service Account (Full access)**\n\n"
+                    "1. Enable Google Sheets API in [Google Cloud Console](https://console.cloud.google.com/)\n"
+                    "2. Create a service account and download JSON key\n"
+                    "3. Add credentials to `.streamlit/secrets.toml`\n"
+                    "4. Share the sheet with the `client_email`"
+                )
+    else:
+        st.error("❌ Not available")
+        st.caption("Install: pip install gspread google-auth")
+    
+    # IP Info
     if st.button("🌐 Get IP Info"):
         with st.spinner("Getting IP info..."):
             st.session_state.ip_info = get_ip_info()
@@ -242,7 +373,6 @@ with st.sidebar:
         st.write(f"Public IP: {st.session_state.ip_info['public_ip']}")
         st.write(f"Local IP: {st.session_state.ip_info['local_ip']}")
         st.write(f"Location: {st.session_state.ip_info['city']}, {st.session_state.ip_info['region']}")
-        st.write(f"Country: {st.session_state.ip_info['country']}")
 
 # Main content
 st.subheader("📤 Upload PDF Files")
@@ -255,12 +385,10 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     st.write(f"📎 {len(uploaded_files)} file(s) selected")
     
-    # Show file list
     with st.expander("View selected files"):
         for file in uploaded_files:
             st.write(f"- {file.name} ({len(file.getvalue())//1024} KB)")
     
-    # Process buttons
     col1, col2 = st.columns(2)
     
     with col1:
@@ -271,14 +399,11 @@ if uploaded_files:
         )
         
         if st.button("👁️ Preview Position", use_container_width=True):
-            # Get the selected file
             selected_file = next(f for f in uploaded_files if f.name == preview_file)
             file_bytes = selected_file.getvalue()
             
-            # Find position
             position_info = find_name_position(file_bytes)
             
-            # Create preview
             pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
             page = pdf_document[0]
             
@@ -287,12 +412,10 @@ if uploaded_files:
                 sig_y = position_info["khoa_y"] + offset_y
                 khoa_x, khoa_y = position_info["khoa_x"], position_info["khoa_y"]
                 
-                # Draw red rectangle for signature
                 rect = fitz.Rect(sig_x, sig_y, sig_x + sig_width, sig_y + sig_height)
                 page.draw_rect(rect, color=(1, 0, 0), width=2)
                 page.insert_text((sig_x, sig_y - 5), "SIGNATURE", fontsize=8, color=(1, 0, 0))
                 
-                # Draw crosshair at Khoa
                 page.draw_line(fitz.Point(khoa_x-5, khoa_y), fitz.Point(khoa_x+5, khoa_y), color=(0, 0, 1), width=1)
                 page.draw_line(fitz.Point(khoa_x, khoa_y-5), fitz.Point(khoa_x, khoa_y+5), color=(0, 0, 1), width=1)
                 
@@ -314,6 +437,10 @@ if uploaded_files:
     
     with col2:
         if st.button("🖊️ Sign All PDFs", type="primary", use_container_width=True):
+            if not sig_path or not os.path.exists(sig_path):
+                st.error("❌ Signature image not found! Please check Google Sheets or add signature.png")
+                st.stop()
+            
             if not st.session_state.ip_info:
                 with st.spinner("Getting IP information..."):
                     st.session_state.ip_info = get_ip_info()
@@ -329,6 +456,7 @@ if uploaded_files:
             status_text = st.empty()
             
             signed_files = {}
+            sheets_saved_count = 0
             
             for idx, uploaded_file in enumerate(uploaded_files):
                 progress = (idx + 1) / len(uploaded_files)
@@ -337,20 +465,16 @@ if uploaded_files:
                 
                 file_bytes = uploaded_file.getvalue()
                 
-                # Find position
                 position_info = find_name_position(file_bytes)
                 
-                # Sign PDF
-                result = sign_pdf(file_bytes, DEFAULT_CONFIG["signature_path"], position_info, config)
+                result = sign_pdf(file_bytes, sig_path, position_info, config)
                 
                 if result["success"]:
-                    # Generate output filename
                     name, ext = os.path.splitext(uploaded_file.name)
                     output_name = f"{name}_signed{ext}"
                     
                     signed_files[output_name] = result["output_bytes"].getvalue()
                     
-                    # Save record to file
                     record = {
                         "timestamp": datetime.now().isoformat(),
                         "input_file": uploaded_file.name,
@@ -359,7 +483,8 @@ if uploaded_files:
                         "position": result["position"],
                         "detection_method": result["detection"]
                     }
-                    save_record(record)
+                    if save_record(record):
+                        sheets_saved_count += 1
                 else:
                     st.error(f"Failed to sign {uploaded_file.name}: {result.get('error', 'Unknown error')}")
             
@@ -368,13 +493,14 @@ if uploaded_files:
             status_text.empty()
             
             st.success(f"✅ Signed {len(signed_files)} PDF(s) successfully!")
-            st.info(f"💾 Records saved to: {DEFAULT_CONFIG['record_file']}")
+            if GOOGLE_SHEETS_AVAILABLE and sheets_saved_count > 0:
+                st.info(f"💾 {sheets_saved_count} record(s) saved to Google Sheets and local backup")
+            else:
+                st.info("💾 Records saved to local file")
     
-    # Show signed files for download
     if st.session_state.signed_files:
         st.subheader("📥 Download Signed PDFs")
         
-        # Individual downloads
         cols = st.columns(min(3, len(st.session_state.signed_files)))
         for idx, (filename, filedata) in enumerate(st.session_state.signed_files.items()):
             with cols[idx % len(cols)]:
@@ -386,7 +512,6 @@ if uploaded_files:
                     key=f"dl_{idx}"
                 )
         
-        # Download all as ZIP
         if len(st.session_state.signed_files) > 1:
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -406,42 +531,50 @@ if uploaded_files:
 st.markdown("---")
 st.subheader("📋 Signing Records")
 
-# Load records from file (sync on each render)
-records = load_records_from_file()
+if GOOGLE_SHEETS_AVAILABLE:
+    status, _ = get_sheets_status()
+    if status == "connected_service_account":
+        if st.button("🔄 Refresh from Google Sheets"):
+            st.cache_data.clear()
+            st.rerun()
+
+records = load_all_records()
 st.session_state.sign_records = records
 
 if records:
-    # Show record count and file info
     col1, col2 = st.columns([1, 1])
     with col1:
         st.write(f"Total records: **{len(records)}**")
     with col2:
-        record_file = DEFAULT_CONFIG["record_file"]
-        if os.path.exists(record_file):
-            file_size = os.path.getsize(record_file)
-            st.write(f"File: `{record_file}` ({file_size} bytes)")
+        if GOOGLE_SHEETS_AVAILABLE:
+            status, _ = get_sheets_status()
+            if status == "connected_service_account":
+                st.write(f"Source: Google Sheets ({DATA_SHEET_NAME})")
+            elif status == "connected_public":
+                st.write(f"Source: Local file (Public Sheet - read only)")
+            else:
+                st.write(f"Source: Local file ({DEFAULT_CONFIG['record_file']})")
         else:
-            st.write(f"File: `{record_file}` (not saved yet)")
-
+            st.write(f"Source: {DEFAULT_CONFIG['record_file']}")
     
-    # Display records table
-    record_data = []
-    for r in records:
-        record_data.append({
-            "Time": r["timestamp"][:19] if len(r["timestamp"]) > 19 else r["timestamp"],
-            "Input File": r["input_file"][:30] + "..." if len(r["input_file"]) > 30 else r["input_file"],
-            "IP": r["ip_info"]["public_ip"],
-            "Location": f"{r['ip_info']['city']}, {r['ip_info']['country']}",
-            "Method": r["detection_method"]
-        })
+    if isinstance(records[0], dict):
+        if "Input File" in records[0]:
+            st.dataframe(records, use_container_width=True)
+        else:
+            record_data = []
+            for r in records:
+                record_data.append({
+                    "Time": r.get("timestamp", "")[:19],
+                    "Input File": r.get("input_file", "")[:30] + "..." if len(r.get("input_file", "")) > 30 else r.get("input_file", ""),
+                    "IP": r.get("ip_info", {}).get("public_ip", ""),
+                    "Location": f"{r.get('ip_info', {}).get('city', '')}, {r.get('ip_info', {}).get('country', '')}",
+                    "Method": r.get("detection_method", "")
+                })
+            st.dataframe(record_data, use_container_width=True)
     
-    st.dataframe(record_data, use_container_width=True)
-    
-    # View raw JSON
     with st.expander("View Raw Records (JSON)"):
-        st.code(json.dumps(records, indent=2), language="json")
+        st.code(json.dumps(records, indent=2, ensure_ascii=False), language="json")
     
-    # Export records
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
@@ -459,8 +592,6 @@ if records:
         )
 else:
     st.info("No signing records yet. Sign some PDFs to see records here.")
-    # Show file path even if empty
-    st.caption(f"Records will be saved to: `{DEFAULT_CONFIG['record_file']}`")
 
 st.markdown("---")
-st.caption("PDF Batch Signature App - Records auto-saved to sign_records.txt")
+st.caption("PDF Batch Signature App - Records saved locally (Google Sheets optional)")

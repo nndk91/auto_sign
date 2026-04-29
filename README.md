@@ -2,12 +2,28 @@
 
 A Streamlit-based web application for automatically signing multiple PDF documents with a digital signature image. The app detects the name "Nguyen Ngoc Dang Khoa" in PDF files and places the signature at a configurable offset position.
 
+## 🆕 Google Sheets Integration
+
+The app supports three modes for signature and record management:
+
+| Mode | Signature Source | Records Storage | Setup Complexity |
+|------|-----------------|-----------------|------------------|
+| **Local Only** (Default) | `signature.png` file | `sign_records.txt` | None |
+| **Public Sheet** | Google Sheets (read-only) | Local file | Low |
+| **Service Account** | Google Sheets | Google Sheets | High |
+
+- **Records**: Signing activity with IP address and location
+- **Signature**: Read from Google Sheets cell A1 (Signature sheet)
+- **Fallback**: Automatically falls back to local files if Sheets is not configured
+
+📖 See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) for detailed setup instructions.
+
 ## Features
 
 - **Batch Processing**: Upload and sign multiple PDF files at once
 - **Auto-Detection**: Automatically finds "Nguyen Ngoc Dang Khoa" in documents
 - **IP Tracking**: Records signing activity with IP address and location
-- **Local Record Storage**: Automatically saves signing records to `sign_records.txt`
+- **Flexible Storage**: Local files, Public Google Sheet, or Service Account
 - **Preview Mode**: Visual preview of signature placement before signing
 - **ZIP Export**: Download all signed PDFs as a ZIP file
 - **Configurable Position**: Adjust signature offset and size via sidebar
@@ -37,7 +53,48 @@ A Streamlit-based web application for automatically signing multiple PDF documen
 pip install -r requirements.txt
 ```
 
-3. Ensure you have a signature image file named `signature.png` in the same directory
+3. For Google Sheets integration (optional), see options below
+
+4. Ensure you have a signature image (see [Signature Setup](#signature-setup))
+
+### Authentication Setup
+
+The app requires login credentials. These are stored in `.streamlit/secrets.toml`:
+
+**Default credentials:**
+- **Username:** `admin`
+- **Password:** `pdfsign2024`
+
+**To change credentials**, edit `.streamlit/secrets.toml`:
+
+```toml
+[authentication]
+username = "your_username"
+password = "your_password"
+```
+
+> ⚠️ **Security Note:** Keep your `secrets.toml` file secure and do not commit it to public repositories.
+
+## Signature Setup
+
+Choose one of three options:
+
+### Option 1: Local File (Default - No Setup)
+Place your signature image as `signature.png` in the app directory.
+
+### Option 2: Public Google Sheet (Read-Only)
+1. Create a Google Sheet and publish it to web
+2. Create a sheet named `Signature`
+3. Put your signature image URL in cell **A1**
+4. Edit `google_sheets.py` and set `PUBLIC_SHEET_URL` to your sheet URL
+
+### Option 3: Service Account (Full Access)
+1. Set up Google Cloud service account
+2. Add credentials to `.streamlit/secrets.toml`
+3. Create a `Signature` sheet with image URL in cell A1
+4. Share the sheet with your service account email
+
+See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) for detailed instructions.
 
 ## Usage
 
@@ -48,6 +105,12 @@ python -m streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
+
+### Login
+
+1. Enter your **username** and **password** (default: admin / pdfsign2024)
+2. Click **"Log In"**
+3. To logout, click the **"🚪 Logout"** button in the sidebar
 
 ### Signing PDFs
 
@@ -72,9 +135,47 @@ Click "👁️ Preview Position" to see the red box indicating signature placeme
 |------|-------------|
 | `app.py` | Streamlit web application |
 | `sign_auto.py` | Command-line batch signing script |
-| `signature.png` | Your signature image (required) |
-| `sign_records.txt` | Auto-generated signing records (JSON format) |
+| `google_sheets.py` | Google Sheets integration module |
+| `signature.png` | Your signature image (local fallback) |
+| `sign_records.txt` | Auto-generated signing records (local backup) |
 | `requirements.txt` | Python package dependencies |
+| `.streamlit/secrets.toml` | Login credentials and Google Sheets configuration |
+| `GOOGLE_SHEETS_SETUP.md` | Detailed Google Sheets setup instructions |
+
+## Google Sheets Configuration (Optional)
+
+### Quick Comparison
+
+| Feature | Local Only | Public Sheet | Service Account |
+|---------|-----------|--------------|-----------------|
+| Setup Time | 0 min | 5 min | 20 min |
+| Signature from Sheets | ❌ | ✅ Read-only | ✅ Read/Write |
+| Records to Sheets | ❌ | ❌ | ✅ Yes |
+| Requires Google Cloud | ❌ | ❌ | ✅ Yes |
+| Best For | Testing | Shared signature URL | Production/Team use |
+
+### Option 1: Local Only (Default)
+By default, the app uses **local storage**:
+- Records saved to `sign_records.txt`
+- Signature loaded from `signature.png`
+- No Google account or credentials needed
+
+### Option 2: Public Google Sheet
+For reading signature URL from a public sheet:
+1. Create and publish a Google Sheet to web
+2. Add `Signature` sheet with image URL in A1
+3. Edit `google_sheets.py`: `PUBLIC_SHEET_URL = "your_sheet_url"`
+
+**Note:** Records are still saved locally. See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) for full instructions.
+
+### Option 3: Service Account (Full Access)
+For saving records to Google Sheets:
+1. Create service account in [Google Cloud Console](https://console.cloud.google.com/)
+2. Download JSON credentials
+3. Add credentials to `.streamlit/secrets.toml`
+4. Share sheet with service account email
+
+See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) for step-by-step instructions.
 
 ## Command-Line Batch Signing
 
@@ -113,6 +214,9 @@ Records are saved as JSON in `sign_records.txt`:
 ]
 ```
 
+When using Service Account, records are also saved to the Google Sheet "data" tab with columns:
+- Input File | Output File | Public IP | Local IP | City | Region | Country | Position X | Position Y | Detection Method
+
 ## Troubleshooting
 
 ### Name Not Found
@@ -125,6 +229,20 @@ If the app cannot find "Nguyen Ngoc Dang Khoa":
 1. Use Preview mode with red box to see placement
 2. Adjust Offset X and Y values
 3. Negative X moves left, negative Y moves up
+
+### Google Sheets Issues
+
+**"Service account info was not in the expected format"**
+- Check `.streamlit/secrets.toml` has all required fields
+- Ensure private key is properly formatted with triple quotes
+
+**"Sheets connected but no signature URL"**
+- Verify cell A1 in Signature sheet contains a valid URL
+- URL must start with `http://` or `https://`
+
+**"Public sheet error"**
+- Ensure sheet is published to web (File → Share → Publish to web)
+- Check `PUBLIC_SHEET_URL` in `google_sheets.py` is correct
 
 ### Dependencies Issues
 If you encounter import errors:
@@ -140,6 +258,8 @@ pip install --upgrade -r requirements.txt
 - Streamlit - Web interface
 - Pillow (PIL) - Image processing
 - Requests - IP geolocation
+- gspread - Google Sheets API (optional)
+- google-auth - Google authentication (optional)
 
 ## License
 
