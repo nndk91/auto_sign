@@ -63,7 +63,7 @@ The app requires login credentials. These are stored in `.streamlit/secrets.toml
 
 **Default credentials:**
 - **Username:** `admin`
-- **Password:** `pdfsign2024`
+- **Password:** `*******`
 
 **To change credentials**, edit `.streamlit/secrets.toml`:
 
@@ -94,7 +94,6 @@ Place your signature image as `signature.png` in the app directory.
 3. Create a `Signature` sheet with image URL in cell A1
 4. Share the sheet with your service account email
 
-See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) for detailed instructions.
 
 ## Usage
 
@@ -108,7 +107,7 @@ The app will open in your browser at `http://localhost:8501`
 
 ### Login
 
-1. Enter your **username** and **password** (default: admin / pdfsign2024)
+1. Enter your **username** and **password** (default: admin / )
 2. Click **"Log In"**
 3. To logout, click the **"🚪 Logout"** button in the sidebar
 
