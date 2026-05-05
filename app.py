@@ -507,6 +507,38 @@ with col_left:
                 st.info(f"💾 {sheets_saved_count} record(s) saved to Google Sheets and local backup")
             else:
                 st.info("💾 Records saved to local file")
+        
+        # Show download buttons if signed files exist
+        if st.session_state.signed_files:
+            st.subheader("⬇️ Download Signed PDFs")
+            
+            # Individual file downloads
+            for filename, file_bytes in st.session_state.signed_files.items():
+                st.download_button(
+                    label=f"📄 {filename}",
+                    data=file_bytes,
+                    file_name=filename,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            
+            # Download all as ZIP if multiple files
+            if len(st.session_state.signed_files) > 1:
+                import zipfile
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for filename, file_bytes in st.session_state.signed_files.items():
+                        zip_file.writestr(filename, file_bytes)
+                zip_buffer.seek(0)
+                
+                st.download_button(
+                    label=f"📦 Download All ({len(st.session_state.signed_files)} files) as ZIP",
+                    data=zip_buffer.getvalue(),
+                    file_name="signed_pdfs.zip",
+                    mime="application/zip",
+                    type="primary",
+                    use_container_width=True
+                )
 
 with col_right:
     st.subheader("📋 Preview & Records")
