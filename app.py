@@ -205,9 +205,10 @@ def sign_pdf(input_bytes, signature_path, position_info, config):
             sig_y = position_info["khoa_y"] + config["offset_y"]
             detection_status = "auto"
         else:
-            sig_x = 340
-            sig_y = 440
-            detection_status = "manual_fallback"
+            # When "Khoa" not found, use offset as absolute position
+            sig_x = config["offset_x"]
+            sig_y = config["offset_y"]
+            detection_status = "manual_position"
         
         pdf_document = fitz.open(stream=input_bytes, filetype="pdf")
         page = pdf_document[0]
@@ -338,8 +339,10 @@ with st.sidebar:
     st.caption(f"Signature: {sig_status}")
     
     st.subheader("Signature Position")
-    offset_x = st.number_input("Offset X", value=DEFAULT_CONFIG["offset_x"], step=5)
-    offset_y = st.number_input("Offset Y", value=DEFAULT_CONFIG["offset_y"], step=5)
+    st.caption("When 'Khoa' found: Offset from detected position")
+    st.caption("When NOT found: Offset = Absolute position (X=Left→Right, Y=Top→Down)")
+    offset_x = st.number_input("Offset X (Left ↔ Right)", value=DEFAULT_CONFIG["offset_x"], step=5)
+    offset_y = st.number_input("Offset Y (Up ↔ Down)", value=DEFAULT_CONFIG["offset_y"], step=5)
     sig_width = st.number_input("Width", value=DEFAULT_CONFIG["sig_width"], step=5)
     sig_height = st.number_input("Height", value=DEFAULT_CONFIG["sig_height"], step=5)
     
@@ -574,10 +577,14 @@ with col_right:
                 st.info(f"Found 'Khoa' at X={khoa_x:.1f}, Y={khoa_y:.1f}")
                 st.info(f"Signature will be at X={sig_x:.1f}, Y={sig_y:.1f}")
             else:
-                st.warning("Name not found - will use default position")
-                sig_x, sig_y = 340, 440
+                # Manual position mode - use offset as absolute coordinates
+                sig_x = offset_x
+                sig_y = offset_y
+                st.warning("⚠️ Name not found - Using Manual Position (Offset X = Left/Right, Offset Y = Up/Down)")
                 rect = fitz.Rect(sig_x, sig_y, sig_x + sig_width, sig_y + sig_height)
                 page.draw_rect(rect, color=(1, 0, 0), width=2)
+                page.insert_text((sig_x, sig_y - 5), "SIGNATURE (Manual)", fontsize=8, color=(1, 0, 0))
+                st.info(f"Manual position: X={sig_x:.1f}, Y={sig_y:.1f}")
             
             preview_bytes = io.BytesIO()
             pdf_document.save(preview_bytes)
